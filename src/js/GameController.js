@@ -15,7 +15,6 @@ export default class GameController {
   }
 
   init() {
-    // debugger;
     this.gamePlay.drawUi(themes.prairie);
     const playerTeam = generateTeam([Bowman, Swordsman, Magician], 3, 3);
     const playerPositions = [
