@@ -1,7 +1,7 @@
 import Character from '../js/Character';
-import Bowman from '../js/Bowman';
-import Undead from '../js/Undead';
-import Daemon from '../js/Daemon';
+import Bowman from '../js/characters/Bowman';
+import Undead from '../js/characters/Undead';
+import Daemon from '../js/characters/Daemon';
 
 test('check creating classes', () => {
   expect(() => {

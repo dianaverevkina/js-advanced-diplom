@@ -1,7 +1,7 @@
 import { characterGenerator, generateTeam } from '../js/generators';
-import Swordsman from '../js/Swordsman';
-import Bowman from '../js/Bowman';
-import Magician from '../js/Magician';
+import Swordsman from '../js/characters/Swordsman';
+import Bowman from '../js/characters/Bowman';
+import Magician from '../js/characters/Magician';
 
 const chars = [Bowman, Swordsman, Magician];
 const maxLevel = 3;

@@ -1,5 +1,5 @@
 import PositionedCharacter from '../js/PositionedCharacter';
-import Vampire from '../js/Vampire';
+import Vampire from '../js/characters/Vampire';
 
 test('check constructor of class PositionedCharacter - position is not a number', () => {
   const vampire = new Vampire(1);
