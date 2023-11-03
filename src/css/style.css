@@ -252,3 +252,29 @@ body {
     font-size: 1.5rem;
   }
 }
+
+.message {
+  font-size: 20px;
+  position: absolute;
+  top: -100%;
+  left: 50%;
+  transform: translateX(-50%);
+  overflow: hidden;
+  background-color: #0505cd;
+  border-radius: 0.5rem;
+}
+.message_visible {
+  top: 0;
+  transition: top 0.5s ease-in-out;
+}
+
+.message_collapsed {
+  top: -100%;
+  transition: top 0.2s ease-in-out;
+}
+
+.message__text {
+  color: #fff;
+  padding: 1.5rem 2rem;
+  margin: 0;
+}

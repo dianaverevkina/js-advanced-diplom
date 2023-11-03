@@ -61,6 +61,9 @@ export default class GamePlay {
     }
 
     this.cells = Array.from(this.boardEl.children);
+
+    this.windowWithMessage = document.querySelector('.message');
+    this.message = this.windowWithMessage.querySelector('.message__text');
   }
 
   /**
@@ -177,12 +180,20 @@ export default class GamePlay {
     this.loadGameListeners.forEach((o) => o.call(null));
   }
 
-  static showError(message) {
-    alert(message);
+  showMessage(message) {
+    this.message.textContent = message;
+
+    this.changeShowingMessageWindow();
+
+    const timerId = setTimeout(() => {
+      this.changeShowingMessageWindow();
+      clearTimeout(timerId);
+    }, 3000);
   }
 
-  static showMessage(message) {
-    alert(message);
+  changeShowingMessageWindow() {
+    this.windowWithMessage.classList.toggle('message_collapsed');
+    this.windowWithMessage.classList.toggle('message_visible');
   }
 
   selectCell(index, color = 'yellow') {
