@@ -6,13 +6,14 @@ import Magician from './characters/Magician';
 import Vampire from './characters/Vampire';
 import Daemon from './characters/Daemon';
 import Undead from './characters/Undead';
+import GameState from './GameState';
 import { generateTeam } from './generators';
+import canAct from './canAttackOrMove';
 
 export default class GameController {
   constructor(gamePlay, stateService) {
     this.gamePlay = gamePlay;
     this.stateService = stateService;
-    this.availableCellsToMove = [];
 
     this.fieldSize = this.gamePlay.boardSize;
 
@@ -22,22 +23,32 @@ export default class GameController {
   }
 
   init() {
-    this.gamePlay.drawUi(themes.prairie);
-    this.playerTeam = generateTeam([Bowman, Swordsman, Magician], 3, 3);
+    this.theme = themes.prairie;
+    this.level = 1;
+
+    this.gamePlay.drawUi(this.theme);
+    this.playerTeam = generateTeam([Bowman, Swordsman, Magician], this.level, 3);
     this.playerPositions = this.generatePositions('playerTeam');
     this.positionedPlayerTeam = this.createPositionedTeam(this.playerTeam, this.playerPositions);
 
-    this.opponentTeam = generateTeam([Vampire, Undead, Daemon], 3, 3);
-    this.opponentPositions = this.generatePositions('opponentTeam');
-    this.positionedOpponentTeam = this.createPositionedTeam(this.opponentTeam, this.opponentPositions);
+    this.enemyTeam = generateTeam([Vampire, Undead, Daemon], this.level, 3);
+    this.enemyPositions = this.generatePositions('enemyTeam');
+    this.positionedEnemyTeam = this.createPositionedTeam(this.enemyTeam, this.enemyPositions);
+    this.allChars = [...this.positionedPlayerTeam, ...this.positionedEnemyTeam];
 
-    this.allChars = [...this.positionedPlayerTeam, ...this.positionedOpponentTeam];
     this.gamePlay.redrawPositions(this.allChars);
+    this.state = {
+      isPlayer: true,
+      theme: this.theme,
+      level: this.level,
+      chars: this.allChars,
+    };
+    GameState.from(this.state);
+
     this.addEvents();
-    // TODO: add event listeners to gamePlay events
-    // TODO: load saved stated from stateService
   }
 
+  // Генерируем позиции для игрока и компьютера
   generatePositions(string) {
     const positions = [];
     for (let i = 0; i < this.fieldSize ** 2; i++) {
@@ -47,13 +58,14 @@ export default class GameController {
         positions.push(i);
       }
 
-      if (string === 'opponentTeam' && position >= 6) {
+      if (string === 'enemyTeam' && position >= 6) {
         positions.push(i);
       }
     }
     return positions;
   }
 
+  // Создаем команду из персонажей с позициями
   createPositionedTeam(team, playerPositions) {
     const positionedTeam = [];
 
@@ -68,80 +80,142 @@ export default class GameController {
     return positionedTeam;
   }
 
+  // Добавляем обработчики событий
   addEvents() {
     this.gamePlay.addCellEnterListener(this.onCellEnter);
     this.gamePlay.addCellClickListener(this.onCellClick);
     this.gamePlay.addCellLeaveListener(this.onCellLeave);
+
+    this.gamePlay.addNewGameListener(() => this.newGame());
+    this.gamePlay.addSaveGameListener(() => this.saveGame());
+    this.gamePlay.addLoadGameListener(() => this.loadGame());
   }
 
   onCellClick(index) {
+    if (this.gameOver) return;
     const cellWithChar = this.gamePlay.cells[index].querySelector('.character');
 
-    if (!cellWithChar) return;
+    if (this.clickedChar && !cellWithChar && !this.enteredCell.classList.contains('selected-green')) return;
+
     this.clickedChar = this.allChars.find((char) => char.position === index);
+
+    // Перемещаем персонажа
+    if (this.enteredCell.classList.contains('selected-green')) {
+      this.playerStep(index);
+      return;
+    }
+
+    // Атакуем противника
+    if (this.enteredCell.classList.contains('selected-red')) {
+      this.playerAttack(index);
+      return;
+    }
+
     const isPlayerChar = this.checkPlayerChar(this.clickedChar);
 
     if (cellWithChar && isPlayerChar) {
       this.gamePlay.cells.forEach((cell, i) => this.gamePlay.deselectCell(i));
       this.gamePlay.selectCell(index);
+      this.activeChar = this.clickedChar;
+      this.activeIndex = index;
     } else {
-      GamePlay.showError('Выберите другого персонажа');
+      this.gamePlay.showMessage('Выберите другого персонажа');
+      this.clickedChar = null;
     }
   }
 
   // Проверяет, является ли кликнутый персонаж персонажем игрока
   checkPlayerChar(char) {
+    if (!char) return;
+
     const playerChar = char.character.type;
     return playerChar === 'bowman' || playerChar === 'swordsman' || playerChar === 'magician';
   }
 
+  // Перемещение игрока
+  playerStep(index) {
+    this.activeChar.position = index;
+    this.gamePlay.redrawPositions(this.allChars);
+    this.gamePlay.cells.forEach((cell, i) => this.gamePlay.deselectCell(i));
+    this.clickedChar = null;
+    // this.state.isPlayer = false;
+    // this.state.chars = this.allChars;
+    // GameState.from(this.state);
+    // this.compAct();
+  }
+
+  // Атака игрока
+  playerAttack(index) {
+    const damage = this.calcDamage(this.activeChar, this.enteredChar);
+    this.gamePlay.cells.forEach((cell, i) => this.gamePlay.deselectCell(i));
+    this.clickedChar = null;
+
+    this.gamePlay.showDamage(index, damage).then(() => {
+      this.enteredChar.character.health -= damage;
+      const { health } = this.enteredChar.character;
+      if (health <= 0) {
+        this.positionedEnemyTeam = this.positionedEnemyTeam
+          .filter((char) => char !== this.enteredChar);
+        this.allChars = [...this.positionedPlayerTeam, ...this.positionedEnemyTeam];
+
+        if (this.positionedEnemyTeam.length === 0) {
+          this.levelUp();
+          return;
+        }
+      }
+
+      this.gamePlay.redrawPositions(this.allChars);
+      this.state.isPlayer = false;
+      this.state.chars = this.allChars;
+      GameState.from(this.state);
+      this.compAct();
+    });
+  }
+
   onCellEnter(index) {
-    // TODO: react to mouse enter
+    if (this.gameOver) return;
     const cellWithChar = this.gamePlay.cells[index].querySelector('.character');
+    this.enteredCell = this.gamePlay.cells[index];
+
     // Проверяем, есть ли персонаж в наведенной клетке
     if (cellWithChar) {
       this.enteredChar = this.allChars.find((char) => char.position === index);
       const message = this.createTooltipMessage(this.enteredChar.character);
       this.gamePlay.showCellTooltip(message, index);
+      this.gamePlay.setCursor('pointer');
     }
 
     const selectedCell = this.gamePlay.cells[index].classList.contains('selected');
     // Если клетка не имеет класс 'selected', то курсор будет палец
-    if (!selectedCell) {
-      this.gamePlay.setCursor('pointer');
-    } else {
+    if (!selectedCell && !cellWithChar) {
       this.gamePlay.setCursor('default');
     }
 
     // Если есть кликнутый персонаж и наводим на другую клетку без персонажа,
     // проверяем может ли туда походить персонаж, если да, то подсвечиваем зеленым кругом
     if (this.clickedChar && !cellWithChar) {
-      const step = this.defineSteps(index, this.clickedChar.position);
       const playerType = this.clickedChar.character.type;
-      if (
-        ((playerType === 'swordsman' || playerType === 'undead') && step <= 4)
-        || ((playerType === 'bowman' || playerType === 'vampire') && step <= 2)
-        || ((playerType === 'magician' || playerType === 'daemon') && step === 1)
-      ) {
+
+      if (canAct(playerType, index, this.clickedChar.position, this.fieldSize)) {
         this.gamePlay.selectCell(index, 'green');
+        this.gamePlay.setCursor('pointer');
       }
     }
 
     // Если есть кликнутый персонаж и наводим на другую клетку c персонажем противника,
-    // определяем шаг атаки, если возможно атаковать, подсвечиваем клетку красным и меняем курсор
+    // если возможно атаковать, подсвечиваем клетку красным и меняем курсор
     if (this.clickedChar && cellWithChar) {
       const isPlayerChar = this.checkPlayerChar(this.enteredChar);
-      if (!(isPlayerChar && selectedCell)) {
-        const attackStep = this.defineSteps(index, this.clickedChar.position, 'attack');
-        const charType = this.enteredChar.character.type;
-        if (
-          ((charType === 'swordsman' || charType === 'undead') && attackStep === 1)
-          || ((charType === 'bowman' || charType === 'vampire') && attackStep <= 2)
-          || ((charType === 'magician' || charType === 'daemon') && attackStep <= 4)
-        ) {
-          this.gamePlay.selectCell(index, 'red');
-          this.gamePlay.setCursor('crosshair');
-        }
+
+      if (isPlayerChar) return;
+
+      const charType = this.clickedChar.character.type;
+
+      if (canAct(charType, index, this.clickedChar.position, this.fieldSize, 'attack')) {
+        this.gamePlay.selectCell(index, 'red');
+        this.gamePlay.setCursor('crosshair');
+      } else {
+        this.gamePlay.setCursor('not-allowed');
       }
     }
   }
@@ -151,56 +225,143 @@ export default class GameController {
     return `\u{1F396} ${char.level} \u{2694} ${char.attack} \u{1F6E1} ${char.defence} \u{2764} ${char.health}`;
   }
 
-  // Определяем количество шагов между выбранным персонажем и наведенной клеткой
-  defineSteps(hoveredPosition, clickedPosition, attack = null) {
-    let steps;
-    const diff = Math.abs(hoveredPosition - clickedPosition);
-
-    const diagDiffKoef = Math.abs(
-      Math.floor(hoveredPosition / this.fieldSize) - Math.floor(clickedPosition / this.fieldSize),
-    );
-
-    // Проверяем находятся ли клетки на одной вертикали
-    if ((clickedPosition % this.fieldSize) === (hoveredPosition % this.fieldSize)) {
-      steps = diff / this.fieldSize;
-    }
-
-    // Проверяем находятся ли клетки на одной горизонтали
-    if (Math.floor(hoveredPosition / this.fieldSize) === Math.floor(clickedPosition / this.fieldSize)) {
-      steps = diff;
-    }
-
-    // Проверяем находятся ли клетки по левой диагонали
-    if (diff === (this.fieldSize - 1) * diagDiffKoef) {
-      steps = diff / (this.fieldSize - 1);
-    }
-
-    // Проверяем находятся ли клетки по правой диагонали
-    if (diff === (this.fieldSize + 1) * diagDiffKoef) {
-      steps = diff / (this.fieldSize + 1);
-    }
-
-    if (!attack) {
-      return steps;
-    }
-
-    if (diff === ((this.fieldSize + 1) * diagDiffKoef - 1)) {
-      steps = (diff + 1) / (this.fieldSize + 1);
-    }
-
-    if (diff === ((this.fieldSize - 1) * diagDiffKoef + 1)) {
-      steps = (diff - 1) / (this.fieldSize - 1);
-    }
-
-    return steps;
-  }
-
   onCellLeave(index) {
+    if (this.gameOver) return;
     this.gamePlay.hideCellTooltip(index);
 
     if (!this.gamePlay.cells[index].classList.contains('selected-yellow')) {
       this.gamePlay.deselectCell(index);
     }
-    // TODO: react to mouse leave
+  }
+
+  // Ход компьютера. Проверяем, есть ли персонаж игрока в радиусе атаки персонажей компьютера.
+  // Если да, то компьютер атакует.
+  compAct() {
+    let targetCell = null;
+    let foundTarget = false;
+    this.positionedEnemyTeam.forEach((char) => {
+      if (foundTarget) return;
+
+      for (const enemy of this.positionedPlayerTeam) {
+        if (canAct(char.character.type, enemy.position, char.position, this.fieldSize, 'attack')) {
+          targetCell = enemy;
+          this.compChar = char;
+          foundTarget = true;
+          break;
+        }
+      }
+    });
+
+    if (targetCell) {
+      this.compAttack(targetCell);
+    }
+
+    // Если нет противника в радиусе атаки, то персонаж перемещается ближе к противнику
+  }
+
+  // Атака компьютера
+  compAttack(target) {
+    const damage = this.calcDamage(this.compChar, target);
+    this.gamePlay.showDamage(target.position, damage).then(() => {
+      target.character.health -= damage;
+      const { health } = target.character;
+      if (health <= 0) {
+        this.positionedPlayerTeam = this.positionedPlayerTeam.filter((char) => char !== target);
+        this.allChars = this.allChars.filter((char) => char !== target);
+        if (this.positionedPlayerTeam.length === 0) {
+          this.gameOver = true;
+          this.gamePlay.redrawPositions(this.allChars);
+          return;
+        }
+      }
+      this.gamePlay.redrawPositions(this.allChars);
+      this.state.isPlayer = true;
+      this.state.chars = this.allChars;
+      GameState.from(this.state);
+    });
+  }
+
+  // Расчет урона
+  calcDamage(attacker, target) {
+    const attackerAttack = attacker.character.attack;
+    const targetDefence = target.character.defence;
+    const damageDiff = attackerAttack - targetDefence;
+    const damage = Math.max(damageDiff, attackerAttack * 0.1);
+
+    return damage;
+  }
+
+  // Переход на новый уровень, обновление уровня, темы, улучшение характеристик игрока
+  levelUp() {
+    this.level += 1;
+
+    switch (this.level) {
+      case 2:
+        this.theme = themes.desert;
+        break;
+      case 3:
+        this.theme = themes.arctic;
+        break;
+      case 4:
+        this.theme = themes.mountain;
+        break;
+      case 5:
+        this.gameOver = true;
+        return;
+      default:
+        this.theme = themes.prairie;
+        break;
+    }
+    this.gamePlay.drawUi(this.theme);
+
+    this.positionedPlayerTeam.forEach((char) => {
+      const { health, attack, defence } = char.character;
+      char.character.health = Math.min(health + 80, 100);
+      char.character.attack = Math.max(attack, (attack * (80 + health)) / 100);
+      char.character.defence = Math.max(defence, (defence * (80 + health)) / 100);
+      char.character.level = this.level;
+    });
+
+    this.enemyTeam = generateTeam([Vampire, Undead, Daemon], this.level, 3);
+    this.enemyPositions = this.generatePositions('enemyTeam');
+    this.positionedEnemyTeam = this.createPositionedTeam(this.enemyTeam, this.enemyPositions);
+    this.allChars = [...this.positionedPlayerTeam, ...this.positionedEnemyTeam];
+    this.gamePlay.redrawPositions(this.allChars);
+
+    this.state = {
+      isPlayer: true,
+      theme: this.theme,
+      level: this.level,
+      chars: this.allChars,
+    };
+    GameState.from(this.state);
+  }
+
+  // Начинаем новую игру
+  newGame() {
+    this.init();
+  }
+
+  // Сохраняем игру в localStorage
+  saveGame() {
+    this.stateService.save(this.state);
+    this.gamePlay.showMessage('Игра сохранена');
+  }
+
+  // Загружаем ранее сохраненную игру из localStorage
+  loadGame() {
+    this.state = this.stateService.load();
+    this.level = this.state.level;
+    this.theme = this.state.theme;
+    this.allChars = this.state.chars;
+
+    this.gamePlay.drawUi(this.theme);
+    this.gamePlay.redrawPositions(this.allChars);
+
+    if (!this.state.isPlayer) {
+      this.compAct();
+    }
+
+    this.gamePlay.showMessage('Игра загружена');
   }
 }
