@@ -351,6 +351,11 @@ export default class GameController {
   // Загружаем ранее сохраненную игру из localStorage
   loadGame() {
     this.state = this.stateService.load();
+
+    if (!this.state) {
+      this.gamePlay.showMessage('Нет сохраненных игр');
+    }
+    
     this.level = this.state.level;
     this.theme = this.state.theme;
     this.allChars = this.state.chars;
