@@ -9,6 +9,7 @@ import Undead from './characters/Undead';
 import GameState from './GameState';
 import { generateTeam } from './generators';
 import canAct from './canAttackOrMove';
+import defineCompSteps from './defineCompSteps';
 
 export default class GameController {
   constructor(gamePlay, stateService) {
@@ -138,10 +139,10 @@ export default class GameController {
     this.gamePlay.redrawPositions(this.allChars);
     this.gamePlay.cells.forEach((cell, i) => this.gamePlay.deselectCell(i));
     this.clickedChar = null;
-    // this.state.isPlayer = false;
-    // this.state.chars = this.allChars;
-    // GameState.from(this.state);
-    // this.compAct();
+    this.state.isPlayer = false;
+    this.state.chars = this.allChars;
+    GameState.from(this.state);
+    this.compAct();
   }
 
   // Атака игрока
@@ -222,7 +223,10 @@ export default class GameController {
 
   // Создаем сообщение подсказки
   createTooltipMessage(char) {
-    return `\u{1F396} ${char.level} \u{2694} ${char.attack} \u{1F6E1} ${char.defence} \u{2764} ${char.health}`;
+    const {
+      level, attack, defence, health,
+    } = char;
+    return `\u{1F396} ${level} \u{2694} ${attack} \u{1F6E1} ${defence} \u{2764} ${health}`;
   }
 
   onCellLeave(index) {
@@ -254,9 +258,10 @@ export default class GameController {
 
     if (targetCell) {
       this.compAttack(targetCell);
+    } else {
+      // Если нет противника в радиусе атаки, то персонаж перемещается ближе к противнику
+      this.compStep();
     }
-
-    // Если нет противника в радиусе атаки, то персонаж перемещается ближе к противнику
   }
 
   // Атака компьютера
@@ -270,6 +275,7 @@ export default class GameController {
         this.allChars = this.allChars.filter((char) => char !== target);
         if (this.positionedPlayerTeam.length === 0) {
           this.gameOver = true;
+          this.gamePlay.showMessage('Вы проиграли');
           this.gamePlay.redrawPositions(this.allChars);
           return;
         }
@@ -279,6 +285,57 @@ export default class GameController {
       this.state.chars = this.allChars;
       GameState.from(this.state);
     });
+  }
+
+  // Шаг компьютера
+  compStep() {
+    let target = null;
+    let compChar = null;
+    let minDiff = Infinity;
+    // Выбираем ближайшего персонажа соперника
+    this.positionedEnemyTeam.forEach((char) => {
+      for (const enemy of this.positionedPlayerTeam) {
+        const diff = Math.abs(char.position - enemy.position);
+        if (diff < minDiff) {
+          minDiff = diff;
+          target = enemy;
+          compChar = char;
+        }
+      }
+    });
+
+    // Определяем возможные клетки для хода компьютера
+    const possibleSteps = defineCompSteps(target, compChar, this.fieldSize);
+
+    let minDiffBetweenTargetAndCell = Infinity;
+    let nearestCell = null;
+
+    // Из возможных клеток выбираем ближайшую к персонажу соперника
+    possibleSteps.forEach((step) => {
+      if (typeof step !== 'number') return;
+      const diff = Math.abs(step - target.position);
+      if (diff < minDiffBetweenTargetAndCell) {
+        minDiffBetweenTargetAndCell = diff;
+        nearestCell = step;
+      }
+    });
+
+    // Проверяем, есть ли на этой клетке любой персонаж
+    const occupiedCell = this.allChars.find((char) => char.position === nearestCell);
+
+    if (occupiedCell && nearestCell % this.fieldSize === 7) {
+      nearestCell -= 1;
+    }
+    if (occupiedCell) {
+      nearestCell += 1;
+    }
+
+    // Осуществляем перемещение персонажа компьютера и обновление поля
+    compChar.position = nearestCell;
+    this.gamePlay.redrawPositions(this.allChars);
+    this.state.isPlayer = true;
+    this.state.chars = this.allChars;
+    GameState.from(this.state);
   }
 
   // Расчет урона
@@ -355,7 +412,7 @@ export default class GameController {
     if (!this.state) {
       this.gamePlay.showMessage('Нет сохраненных игр');
     }
-    
+
     this.level = this.state.level;
     this.theme = this.state.theme;
     this.allChars = this.state.chars;
