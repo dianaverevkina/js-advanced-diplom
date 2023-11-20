@@ -29,7 +29,7 @@ export default function defineCompSteps(target, compChar, fieldSize) {
 
   switch (compChar.character.type) {
     case 'undead':
-      steps = 4;
+      steps = 3;
       break;
     case 'vampire':
       steps = 2;

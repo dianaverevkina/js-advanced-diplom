@@ -21,6 +21,8 @@ export default class GameController {
     this.onCellClick = this.onCellClick.bind(this);
     this.onCellEnter = this.onCellEnter.bind(this);
     this.onCellLeave = this.onCellLeave.bind(this);
+
+    this.addEvents();
   }
 
   init() {
@@ -45,8 +47,6 @@ export default class GameController {
       chars: this.allChars,
     };
     GameState.from(this.state);
-
-    this.addEvents();
   }
 
   // Генерируем позиции для игрока и компьютера
@@ -96,8 +96,6 @@ export default class GameController {
     if (this.gameOver) return;
     const cellWithChar = this.gamePlay.cells[index].querySelector('.character');
 
-    if (this.clickedChar && !cellWithChar && !this.enteredCell.classList.contains('selected-green')) return;
-
     this.clickedChar = this.allChars.find((char) => char.position === index);
 
     // Перемещаем персонажа
@@ -121,6 +119,7 @@ export default class GameController {
       this.activeIndex = index;
     } else {
       this.gamePlay.showMessage('Выберите другого персонажа');
+      this.gamePlay.cells.forEach((cell, i) => this.gamePlay.deselectCell(i));
       this.clickedChar = null;
     }
   }
@@ -149,15 +148,16 @@ export default class GameController {
   playerAttack(index) {
     const damage = this.calcDamage(this.activeChar, this.enteredChar);
     this.gamePlay.cells.forEach((cell, i) => this.gamePlay.deselectCell(i));
-    this.clickedChar = null;
 
     this.gamePlay.showDamage(index, damage).then(() => {
-      this.enteredChar.character.health -= damage;
-      const { health } = this.enteredChar.character;
+      this.clickedChar.character.health -= damage;
+      const { health } = this.clickedChar.character;
+
       if (health <= 0) {
         this.positionedEnemyTeam = this.positionedEnemyTeam
-          .filter((char) => char !== this.enteredChar);
+          .filter((char) => char !== this.clickedChar);
         this.allChars = [...this.positionedPlayerTeam, ...this.positionedEnemyTeam];
+        this.clickedChar = null;
 
         if (this.positionedEnemyTeam.length === 0) {
           this.levelUp();
@@ -166,6 +166,7 @@ export default class GameController {
       }
 
       this.gamePlay.redrawPositions(this.allChars);
+      this.clickedChar = null;
       this.state.isPlayer = false;
       this.state.chars = this.allChars;
       GameState.from(this.state);
@@ -345,7 +346,7 @@ export default class GameController {
     const damageDiff = attackerAttack - targetDefence;
     const damage = Math.max(damageDiff, attackerAttack * 0.1);
 
-    return damage;
+    return Math.floor(damage);
   }
 
   // Переход на новый уровень, обновление уровня, темы, улучшение характеристик игрока
@@ -363,7 +364,7 @@ export default class GameController {
         this.theme = themes.mountain;
         break;
       case 5:
-        this.gameOver = true;
+        this.finishGame();
         return;
       default:
         this.theme = themes.prairie;
@@ -373,17 +374,21 @@ export default class GameController {
 
     this.positionedPlayerTeam.forEach((char) => {
       const { health, attack, defence } = char.character;
-      char.character.health = Math.min(health + 80, 100);
-      char.character.attack = Math.max(attack, (attack * (80 + health)) / 100);
-      char.character.defence = Math.max(defence, (defence * (80 + health)) / 100);
+      char.character.health = Math.floor(Math.min(health + 80, 100));
+      char.character.attack = Math.floor(Math.max(attack, (attack * (80 + health)) / 100));
+      char.character.defence = Math.floor(Math.max(defence, (defence * (80 + health)) / 100));
       char.character.level = this.level;
     });
 
     this.enemyTeam = generateTeam([Vampire, Undead, Daemon], this.level, 3);
-    this.enemyPositions = this.generatePositions('enemyTeam');
+
+    this.playerTeam.characters = this.playerTeam.characters.filter(char => char.health > 0);
+    this.positionedPlayerTeam = this.createPositionedTeam(this.playerTeam, this.playerPositions);
     this.positionedEnemyTeam = this.createPositionedTeam(this.enemyTeam, this.enemyPositions);
+
     this.allChars = [...this.positionedPlayerTeam, ...this.positionedEnemyTeam];
     this.gamePlay.redrawPositions(this.allChars);
+    this.defaultSettings();
 
     this.state = {
       isPlayer: true,
@@ -394,8 +399,17 @@ export default class GameController {
     GameState.from(this.state);
   }
 
+  finishGame() {
+    this.gameOver = true;
+    this.gamePlay.setCursor('default');
+    this.gamePlay.redrawPositions(this.allChars);
+    this.gamePlay.showMessage('Вы выиграли!');
+  }
+
   // Начинаем новую игру
   newGame() {
+    this.gameOver = false;
+    this.defaultSettings();
     this.init();
   }
 
@@ -424,6 +438,15 @@ export default class GameController {
       this.compAct();
     }
 
+    this.defaultSettings();
+
     this.gamePlay.showMessage('Игра загружена');
+  }
+
+  defaultSettings() {
+    this.activeChar = null;
+    this.activeIndex = null;
+    this.clickedChar = null;
+    this.enteredCell = null;
   }
 }
