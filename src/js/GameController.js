@@ -9,7 +9,7 @@ import Undead from './characters/Undead';
 import GameState from './GameState';
 import { generateTeam } from './generators';
 import canAct from './canAttackOrMove';
-import defineCompSteps from './defineCompSteps';
+import defineCompStep from './defineCompStep';
 
 export default class GameController {
   constructor(gamePlay, stateService) {
@@ -305,34 +305,11 @@ export default class GameController {
       }
     });
 
-    // Определяем возможные клетки для хода компьютера
-    const possibleSteps = defineCompSteps(target, compChar, this.fieldSize);
-
-    let minDiffBetweenTargetAndCell = Infinity;
-    let nearestCell = null;
-
-    // Из возможных клеток выбираем ближайшую к персонажу соперника
-    possibleSteps.forEach((step) => {
-      if (typeof step !== 'number') return;
-      const diff = Math.abs(step - target.position);
-      if (diff < minDiffBetweenTargetAndCell) {
-        minDiffBetweenTargetAndCell = diff;
-        nearestCell = step;
-      }
-    });
-
-    // Проверяем, есть ли на этой клетке любой персонаж
-    const occupiedCell = this.allChars.find((char) => char.position === nearestCell);
-
-    if (occupiedCell && nearestCell % this.fieldSize === 7) {
-      nearestCell -= 1;
-    }
-    if (occupiedCell) {
-      nearestCell += 1;
-    }
+    // Определяем ближайшую клетку для хода компьютера
+    const compStep = defineCompStep(target, compChar, this.fieldSize, this.allChars);
 
     // Осуществляем перемещение персонажа компьютера и обновление поля
-    compChar.position = nearestCell;
+    compChar.position = compStep;
     this.gamePlay.redrawPositions(this.allChars);
     this.state.isPlayer = true;
     this.state.chars = this.allChars;

@@ -161,7 +161,6 @@ export default class GamePlay {
   }
 
   onCellClick(event) {
-    console.log(this.cellClickListeners)
     const index = this.cells.indexOf(event.currentTarget);
     this.cellClickListeners.forEach((o) => o.call(null, index));
   }
@@ -182,7 +181,6 @@ export default class GamePlay {
   }
 
   showMessage(message) {
-    debugger;
     this.message.textContent = message;
 
     this.changeShowingMessageWindow();
